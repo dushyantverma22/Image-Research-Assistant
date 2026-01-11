@@ -1,0 +1,8 @@
+gradio
+wikipedia
+mcp
+langchain
+langchain-openai
+langgraph
+langchain-mcp-adapters
+dotenv

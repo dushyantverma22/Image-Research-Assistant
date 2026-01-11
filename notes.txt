@@ -1,0 +1,186 @@
+Base64 in Simple Words 🍪📦
+Think of it like this: You're sending chocolate chip cookies through a mail tube that only accepts marbles.
+
+The Problem:
+Cookies don't fit through the tube
+
+The tube only accepts small, round marbles
+
+But you really need to send your cookie recipe!
+
+The Solution (Base64):
+Break the cookie into crumbs (your original data)
+
+Put 3 crumbs into each of 4 small boxes (convert binary to groups of 6 bits)
+
+Label each box with a marble color (each 6-bit group = 1 printable character)
+
+Send the marbles through the tube (safe transmission)
+
+On the other side, reverse the process (decode back to original)
+
+Key Points for Interview:
+What it is:
+A way to represent binary data (images, files) using only 64 safe characters: A-Z, a-z, 0-9, +, /
+
+Makes "unsafe" data safe for emails, URLs, and text-only systems
+
+Why we need it:
+Some systems only understand text, not raw binary
+
+Prevents special characters from breaking things
+
+Like putting a fragile gift in a protective box before shipping
+
+Simple Example:
+text
+Original: "Hi"
+→ Binary: 01001000 01101001
+→ Base64: "SGk="
+The "=" at the end:
+Just padding (like adding empty boxes to fill the shipment)
+
+Makes sure we always have complete groups
+
+Perfect Interview Answer:
+"Base64 is like a universal packaging system. When data needs to travel through systems that only understand text, we convert it into a safe text format using 64 common characters. It's not encryption (no secret key), just repackaging for safe delivery."
+
+Real-life uses:
+Email attachments
+
+Embedding images in HTML/CSS
+
+API tokens
+
+Storing binary data in JSON/XML
+
+Remember: It makes data 33% larger (like adding bubble wrap), but ensures it arrives intact! 📦✨
+
+
+========================
+
+Q1. Why converted to Base64?
+Ans: then transforms that data into a standardized format suitable for API transmission,
+
+import asyncio
+import os
+from typing import Annotated
+
+from dotenv import load_dotenv
+from typing_extensions import TypedDict
+
+from langchain_core.messages import AnyMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_openai import ChatOpenAI
+
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import START, END, StateGraph
+from langgraph.graph.message import add_messages
+from langgraph.prebuilt import ToolNode, tools_condition
+
+from langchain_mcp_adapters.client import MultiServerMCPClient
+
+load_dotenv()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+server_configs = {
+    "vision": {
+        "command": "python",
+        "args": ["visual_analysis_server.py"],
+        "transport": "stdio",
+    }
+}
+
+class State(TypedDict):
+    messages: Annotated[list[AnyMessage], add_messages]
+
+def create_graph(tools: list):
+    if not OPENAI_API_KEY:
+        raise ValueError("OPENAI_API_KEY not found in env")
+
+    llm = ChatOpenAI(
+        model="gpt-4o-mini",
+        temperature=0,
+        api_key=OPENAI_API_KEY,
+    )
+
+    # get_tools() already returns LangChain BaseTool. [web:44]
+    llm_with_tools = llm.bind_tools(tools, tool_choice="any")
+
+    prompt = ChatPromptTemplate.from_messages(
+        [
+            (
+                "system",
+                "You are an image analysis assistant.\n"
+                "When the user gives an image path, you MUST:\n"
+                "1) Call load_image_from_path(file_path=...) to get base64_image and mime_type.\n"
+                "2) Call get_image_description(base64_image_string=..., mime_type=...).\n"
+                "3) Return the description text to the user.\n"
+                "If the file cannot be read, mention the error to the user.\n"
+            ),
+            MessagesPlaceholder("messages"),
+        ]
+    )
+
+
+    chat_llm = prompt | llm_with_tools
+
+    def chat_node(state: State):
+        response = chat_llm.invoke({"messages": state["messages"]})
+        # Return ONLY the delta; add_messages will append.
+        return {"messages": [response]}
+
+    builder = StateGraph(State)
+    builder.add_node("chat", chat_node)
+
+    # ToolNode must be named "tools" for tools_condition conventions. [web:6]
+    builder.add_node("tools", ToolNode(tools))
+
+    builder.add_edge(START, "chat")
+
+    # Explicit mapping avoids odd routing behavior. [web:59]
+    builder.add_conditional_edges(
+        "chat",
+        tools_condition,
+        {
+            "tools": "tools",
+            "__end__": END,
+        },
+    )
+
+    builder.add_edge("tools", "chat")
+
+    return builder.compile(checkpointer=MemorySaver())
+
+async def main():
+    client = MultiServerMCPClient(server_configs)
+    tools = await client.get_tools()  # list[BaseTool] [web:44][web:3]
+    print("Loaded tools:", [t.name for t in tools])
+    agent = create_graph(tools)
+
+    while True:
+        user_input = input("\nYou: ").strip()
+        if user_input.lower() in {"exit", "quit"}:
+            break
+
+        try:
+            out = await agent.ainvoke(
+                {"messages": [("user", user_input)]},
+                config={"configurable": {"thread_id": "multi-server-session"}},
+            )
+
+
+            last = out["messages"][-1]
+            print("AI content:", repr(last.content))
+            print("AI tool_calls:", getattr(last, "tool_calls", None))
+
+            # Optional: show tool calls if present
+            if hasattr(last, "tool_calls") and last.tool_calls:
+                print("Tool calls:", last.tool_calls)
+
+            print("AI:", out["messages"][-1].content)
+        except Exception as e:
+            print("Error:", e)
+
+if __name__ == "__main__":
+    asyncio.run(main())
