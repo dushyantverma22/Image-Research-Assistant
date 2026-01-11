@@ -1,0 +1,36 @@
+# Virtual env
+.venv
+env
+venv
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Git
+.git
+.gitignore
+
+# VS Code
+.vscode/
+
+# Egg info
+*.egg-info/
+
+# Local files
+notes.txt
+README.md
+LICENSE
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+
+# Tests
+test_code/
+image/
