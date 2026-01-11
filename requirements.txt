@@ -7,4 +7,3 @@ langgraph
 langchain-mcp-adapters
 dotenv
 
--e .
