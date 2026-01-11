@@ -20,13 +20,24 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 
 
 # ------------------------------------------------------------------
-# ENV SETUP
+# ENV SETUP (LOCAL + PRODUCTION SAFE)
 # ------------------------------------------------------------------
-load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+import os
+
+# Load .env only if present (for local development)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass  # In production, env vars will come from GitHub Actions / Docker
+
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 if not OPENAI_API_KEY:
-    raise ValueError("❌ OPENAI_API_KEY not found in environment variables")
+    raise RuntimeError(
+        "❌ OPENAI_API_KEY not found. "
+        "Make sure it is set as an environment variable or GitHub Secret."
+    )
 
 
 # ------------------------------------------------------------------

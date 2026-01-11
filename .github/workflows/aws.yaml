@@ -32,8 +32,40 @@ jobs:
         run: |
           echo "Building Docker image..."
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          
+
           echo "Pushing Docker image to ECR..."
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
- 
+  Continuous-Deployment:
+    name: Deploy Docker Image on EC2
+    needs: Continuous-Integration
+    runs-on: self-hosted
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DEFAULT_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Stop existing container (if running)
+        run: |
+          docker ps -q --filter "name=image-assistant" | grep -q . && docker stop image-assistant && docker rm image-assistant || echo "No existing container"
+
+      - name: Pull latest image from ECR
+        run: |
+          docker pull ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:latest
+
+      - name: Run Docker container with OPENAI key
+        run: |
+          docker run -d \
+            --name image-assistant \
+            -p 7860:7860 \
+            --restart always \
+            -e OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}" \
+            ${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPO }}:latest
