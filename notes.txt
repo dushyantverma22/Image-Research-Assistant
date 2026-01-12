@@ -437,3 +437,335 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="blue")) as demo:
 
 
 demo.launch(server_name="Localhost", server_port=7860)
+
+
+===========================================================
+
+
+1️⃣ Big Picture: What You Actually Built
+
+You didn’t just build an app.
+You built a full production pipeline:
+
+User Browser
+   ↓
+Gradio UI (EC2)
+   ↓
+LangGraph Agent
+   ↓
+MCP Tool Router
+   ↓
+Visual Analysis Server (subprocess)
+   ↓
+OpenAI Vision API
+   ↓
+Wikipedia Tool
+
+
+Plus:
+
+GitHub → CI/CD → Docker → ECR → EC2 → Container → Public URL
+
+
+This is real LLMOps + MLOps work. Not toy project. 🔥
+
+2️⃣ Mistakes You Made (and Why They Happened)
+
+Let’s go through them one by one.
+
+❌ Mistake 1: Docker build failing with
+
+“file:///app does not appear to be a Python project”
+
+Why it happened:
+
+Your requirements.txt had:
+
+-e .
+
+
+which means:
+
+“Install the local package from current directory”
+
+But in your Dockerfile you did:
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . .
+
+
+So at install time:
+
+/app had NO setup.py yet
+
+pip failed
+
+💡 Concept:
+
+Docker layers are executed top to bottom.
+Files copied later do not exist in earlier layers.
+
+✅ Correct Pattern:
+COPY . .
+RUN pip install -r requirements.txt
+
+❌ Mistake 2: Image analysis working locally but failing in EC2
+
+Error:
+
+"Unable to analyze image due to technical issue"
+
+Why it happened:
+
+Inside Gradio, image path becomes:
+
+/tmp/gradio/xxxx/pyramid.jpg
+
+
+But your visual_analysis_server.py was:
+
+expecting relative paths
+
+or not running properly as subprocess
+
+or not receiving file correctly
+
+💡 Concept:
+
+Inside Docker:
+
+filesystem is isolated
+
+/tmp/gradio/... exists only inside container
+
+subprocess must run inside same container context
+
+✅ Fix:
+
+Ensure:
+
+visual_analysis_server.py is copied into container
+
+MCP subprocess can access same filesystem
+
+You pass exact path to tool
+
+❌ Mistake 3: OpenAI API key missing in EC2
+
+Error:
+
+"missing API key"
+
+Why:
+
+You used:
+
+load_dotenv()
+os.getenv("OPENAI_API_KEY")
+
+
+But in EC2:
+
+.env file does not exist
+
+secrets are not auto-loaded
+
+💡 Concept:
+
+In production:
+
+Never rely on .env
+
+Always use environment variables
+
+✅ Fix:
+
+Pass at runtime:
+
+docker run -e OPENAI_API_KEY=sk-xxxx ...
+
+
+or via GitHub Actions secrets.
+
+❌ Mistake 4: Self-hosted runner showing offline
+Why:
+
+GitHub runner is not a service by default.
+If:
+
+EC2 restarts
+
+SSH session closes
+
+runner script stops
+→ runner goes offline
+
+💡 Concept:
+
+Self-hosted runner is just a process, not magic.
+
+✅ Fix:
+
+Either:
+
+Run it in tmux / screen
+
+Or install it as a system service
+
+❌ Mistake 5: docker: command not found in GitHub Actions
+Why:
+
+Your EC2 machine did not have Docker installed.
+
+💡 Concept:
+
+GitHub does not manage your self-hosted runner environment.
+You are 100% responsible.
+
+✅ Fix:
+sudo apt update
+sudo apt install docker.io -y
+sudo usermod -aG docker ubuntu
+
+❌ Mistake 6: SSL Error when opening
+https://54.xxx.xxx.xxx:7860
+
+
+Error:
+
+ERR_SSL_PROTOCOL_ERROR
+
+Why:
+
+Your Gradio app is running on HTTP, not HTTPS.
+
+You tried:
+
+https://IP:7860
+
+
+But server is:
+
+http://IP:7860
+
+💡 Concept:
+
+SSL is not automatic. You must configure it.
+
+3️⃣ CRITICAL CONCEPT: HTTP vs HTTPS (Very Important)
+HTTP:
+http://54.147.190.138:7860
+
+
+Data is sent in plain text
+
+Anyone can sniff traffic
+
+No encryption
+
+HTTPS:
+https://domain.com
+
+
+Data is encrypted
+
+Uses SSL/TLS certificate
+
+Secure communication
+
+Why your app failed on HTTPS:
+
+You did:
+
+https://54.147.190.138:7860
+
+
+But:
+
+No SSL certificate installed
+
+No reverse proxy (Nginx)
+
+Gradio runs plain HTTP
+
+So browser said:
+
+"Invalid response"
+
+Correct way right now:
+http://54.147.190.138:7860
+
+Production-grade way:
+User → HTTPS → Nginx → HTTP → Gradio container
+
+
+Where:
+
+Nginx handles SSL
+
+Let’s Encrypt provides certificate
+
+4️⃣ Another Big Concept You Learned (Without Realizing)
+🧠 Containers are NOT VMs
+
+You treated container like:
+
+“mini EC2”
+
+But reality:
+
+No systemd
+
+No background services
+
+No shell persistence
+
+No shared filesystem
+
+No auto .env loading
+
+Each container is:
+
+one process + isolated filesystem
+
+This is why:
+
+paths broke
+
+subprocess issues happened
+
+tools failed
+
+Now you understand why Docker is tricky.
+
+5️⃣ Architectural Lessons (Very Important)
+
+You accidentally built microservice architecture:
+
+mcp_client.py (orchestrator)
+visual_analysis_server.py (vision microservice)
+research_server.py (wikipedia microservice)
+
+
+Connected via:
+
+MCP protocol (stdio)
+
+
+This is:
+
+exactly how large LLM systems are built
+
+how OpenAI, Anthropic, etc structure tools
+
+You are learning production AI architecture, not just Python.
+
+6️⃣ Security Lessons You Learned
+Mistake	Concept
+Using .env in production	Secrets should be injected
+Hardcoding keys	Never do this
+Exposing 7860 publicly	Should be behind reverse proxy
+No HTTPS	Not production safe
+
+These are real industry security practices.
