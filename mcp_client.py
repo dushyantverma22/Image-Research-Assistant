@@ -212,7 +212,8 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="blue")) as demo:
 
         # Build user message
         if image_path:
-            full_message = f"{user_text}\n\nImage path: {image_path}"
+            full_image_path = os.path.abspath(image_path)
+            full_message = f"{user_text}\n\nImage path: {full_image_path}"
             chat_history.append({
                 "role": "user",
                 "content": f"📷 {image_path}\n{user_text}"
