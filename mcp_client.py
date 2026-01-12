@@ -256,4 +256,5 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="blue")) as demo:
     )
 
 
-demo.launch(server_name="Localhost", server_port=7860)
+#demo.launch(server_name="Localhost", server_port=7860)
+demo.launch(server_name="0.0.0.0", server_port=7860)
