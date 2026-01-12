@@ -3,4 +3,4 @@
 image
 
 research
-assistant
+assistan
